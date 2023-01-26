@@ -1,4 +1,4 @@
-# Raspberry Pico with MicroPython
+# Python webserver for a Raspberry Pico with MLX90614 temperature sensor
 
 ## Install MicroPython
 
@@ -6,7 +6,14 @@
 2. Connect your Pico to the computer while pressing the boot sel button
 3. Copy the `.uf2` file to the Pico drive (inside the terminal)
 
-## File transfer with rshell
+## Temperature sensor web server
+
+1. Copy pico_config.json to Pico
+2. Copy sensor_web.py as main.py to Pico
+
+## Useful commands:
+
+### File transfer with rshell
 
 ```
 rshell --buffer-size=30 -p /dev/tty.usbmodem1101 -a
@@ -16,13 +23,8 @@ rshell --buffer-size=30 -p /dev/tty.usbmodem1101 -a
 cp <file.xyz> /pyboard/<file.xyz>
 ```
 
-## Micropython REPL
+### Micropython REPL
 
 ```
 minicom -b 115200 -o -D /dev/tty.usbmodem1101
 ```
-
-## Temperature sensor web server
-
-1. Copy pico_config.json to Pico
-2. Copy sensor_web.py as main.py to Pico
