@@ -2,21 +2,21 @@
 
 ## Install MicroPython
 
-1. Download prebuilt `.uf2` file
-2. Connect Pico to Computer while pressing the boot sel button
-3. Copy the `.uf2` file to the Pico drive inside the terminal
+1. Download the prebuilt `.uf2` file from the offical Raspberry site
+2. Connect your Pico to the computer while pressing the boot sel button
+3. Copy the `.uf2` file to the Pico drive (inside the terminal)
 
-## Connect with pico for python file upload with rshell
+## File transfer with rshell
 
 ```
 rshell --buffer-size=30 -p /dev/tty.usbmodem1101 -a
 ```
 
 ```
-cp <file.py> /pyboard/main.py
+cp <file.xyz> /pyboard/<file.xyz>
 ```
 
-## Connect with pico for REPL
+## Micropython REPL
 
 ```
 minicom -b 115200 -o -D /dev/tty.usbmodem1101
