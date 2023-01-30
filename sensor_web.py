@@ -1,3 +1,4 @@
+import machine
 import network
 import socket
 import time
@@ -52,70 +53,79 @@ def read_temperature(bus: I2C) -> tuple[float, float]:
         raise InvalidReadingError("The temperature sensor was not available")
 
 
-def clear_buffer(buffer):
-    while True:
-        line = buffer.readline()
-        if not line or line == b"\r\n":
-            break
-
-with open("pico_config.json") as config_file:
-    config = json.load(config_file)
-
-ssid = config["wifi"]["ssid"]
-password = config["wifi"]["password"]
-
-wlan = network.WLAN(network.STA_IF)
-wlan.active(True)
-wlan.connect(ssid, password)
-
-# Wait for connect or fail
-max_wait = 10
-while max_wait > 0:
-    if wlan.status() < 0 or wlan.status() >= 3:
-        break
-    max_wait -= 1
-    print("waiting for connection...")
-    time.sleep(1)
-
-# Handle connection error
-if wlan.status() != 3:
-    raise RuntimeError("network connection failed")
-
-# Open socket
-addr = socket.getaddrinfo("0.0.0.0", 80)[0][-1]
-
-s = socket.socket()
-s.bind(addr)
-s.listen(1)
-
-# Listen for connections
-while True:
+def main():
     try:
-        cl, addr = s.accept()
-        led.on()
-        cl_file = cl.makefile("rwb", 0)
-        clear_buffer(cl_file)
-        response = dict()
-        try:
-            (
-                ambient_temp,
-                object_temp_avg,
-                object_temp_1,
-                object_temp_2,
-            ) = read_temperature(i2c)
-            response["ambient_temperature"] = ambient_temp
-            response["object_temperature_1"] = object_temp_1
-            response["object_temperature_2"] = object_temp_2
-            response["object_temperature_avg"] = object_temp_avg
-            response["success"] = True
-        except InvalidReadingError as e:
-            response["success"] = False
-            response["error"] = str(e)
-        cl.send("HTTP/1.0 200 OK\r\nContent-type: application/json\r\n\r\n")
-        cl.send(json.dumps(response))
-        cl.close()
-        led.off()
+        with open("pico_config.json") as config_file:
+            config = json.load(config_file)
 
-    except OSError as e:
-        cl.close()
-        print("connection closed")
+        ssid = config["wifi"]["ssid"]
+        password = config["wifi"]["password"]
+
+        wlan = network.WLAN(network.STA_IF)
+        wlan.active(True)
+        wlan.connect(ssid, password)
+
+        # Wait for connect or fail
+        max_wait = 10
+        while max_wait > 0:
+            if wlan.status() < 0 or wlan.status() >= 3:
+                break
+            max_wait -= 1
+            time.sleep(1)
+
+        # Handle connection error
+        if wlan.status() != 3:
+            raise RuntimeError("network connection failed")
+
+        # Open socket
+        addr = socket.getaddrinfo("0.0.0.0", 80)[0][-1]
+
+        s = socket.socket()
+        s.bind(addr)
+        s.listen(3)
+
+        # Listen for connections
+        while True:
+            try:
+                client, addr = s.accept()
+                led.on()
+                
+                # clear buffer
+                while True:
+                    line = client.readline()
+                    if not line or line == b"\r\n":
+                        break
+
+                response = dict()
+                try:
+                    (
+                        ambient_temp,
+                        object_temp_avg,
+                        object_temp_1,
+                        object_temp_2,
+                    ) = read_temperature(i2c)
+                    response["ambient_temperature"] = ambient_temp
+                    response["object_temperature_1"] = object_temp_1
+                    response["object_temperature_2"] = object_temp_2
+                    response["object_temperature_avg"] = object_temp_avg
+                    response["success"] = True
+                except InvalidReadingError as e:
+                    response["success"] = False
+                    response["error"] = str(e)
+                client.send("HTTP/1.0 200 OK\r\nContent-type: application/json\r\n\r\n")
+                client.send(json.dumps(response))
+                client.close()
+                led.off()
+
+            except OSError as e:
+                ...
+            finally:
+                client.close()
+    except Exception:
+        ...
+    finally:
+        time.sleep(10)
+        machine.reset()
+
+
+main()
