@@ -4,7 +4,7 @@ import socket
 import time
 import json
 
-from machine import I2C, Pin
+from machine import I2C, Pin, Timer
 
 
 class InvalidReadingError(Exception):
@@ -16,7 +16,41 @@ MLX90614_TEMPERATURE_AMBIENT_ADDRESS = 0x6
 MLX90614_TEMPERATURE1_ADDRESS = 0x7
 MLX90614_TEMPERATURE2_ADDRESS = 0x8
 
+ignore_object_temperature = False
+timer = Timer()
+
+
+def set_object_temperature_ignore_state(state):
+    global ignore_object_temperature
+    ignore_object_temperature = state
+
+
+def ignore_period_over(t):
+    set_object_temperature_ignore_state(False)
+    timer.deinit()
+
+
+btn_first_press = None
+
+
+def ignore_button_handler(p):
+    global btn_first_press
+    if btn_first_press and time.ticks_ms() - btn_first_press < 500:
+        return
+    btn_first_press = time.ticks_ms()
+    set_object_temperature_ignore_state(True)
+    timer.deinit()
+    timer.init(
+        period=900000,  # 15min
+        mode=Timer.ONE_SHOT,
+        callback=ignore_period_over,
+    )
+
+
 led = Pin("LED", Pin.OUT)
+
+ignore_btn = Pin(28, Pin.IN, Pin.PULL_UP)
+ignore_btn.irq(trigger=Pin.IRQ_RISING, handler=ignore_button_handler)
 
 i2c = I2C(1, scl=Pin(27), sda=Pin(26), freq=100000)
 
@@ -89,7 +123,7 @@ def main():
             try:
                 client, addr = s.accept()
                 led.on()
-                
+
                 # clear buffer
                 while True:
                     line = client.readline()
@@ -105,9 +139,16 @@ def main():
                         object_temp_2,
                     ) = read_temperature(i2c)
                     response["ambient_temperature"] = ambient_temp
-                    response["object_temperature_1"] = object_temp_1
-                    response["object_temperature_2"] = object_temp_2
-                    response["object_temperature_avg"] = object_temp_avg
+                    response["object_temperature_1"] = (
+                        ambient_temp if ignore_object_temperature else object_temp_1
+                    )
+                    response["object_temperature_2"] = (
+                        ambient_temp if ignore_object_temperature else object_temp_2
+                    )
+                    response["object_temperature_avg"] = (
+                        ambient_temp if ignore_object_temperature else object_temp_avg
+                    )
+                    response["ignore_state"] = ignore_object_temperature
                     response["success"] = True
                 except InvalidReadingError as e:
                     response["success"] = False
