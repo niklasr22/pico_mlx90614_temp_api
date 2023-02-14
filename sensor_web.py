@@ -4,7 +4,7 @@ import socket
 import time
 import json
 
-from machine import I2C, Pin, Timer
+from machine import I2C, Pin, Timer, WDT
 
 
 class InvalidReadingError(Exception):
@@ -15,6 +15,7 @@ MLX90614_ADDRESS = 0x5A
 MLX90614_TEMPERATURE_AMBIENT_ADDRESS = 0x6
 MLX90614_TEMPERATURE1_ADDRESS = 0x7
 MLX90614_TEMPERATURE2_ADDRESS = 0x8
+
 
 ignore_object_temperature = False
 timer = Timer()
@@ -31,26 +32,41 @@ def ignore_period_over(t):
 
 
 btn_first_press = None
+btn_last_release = time.ticks_ms()
+MIN_PRESS_DURATION = 3000
+MAX_PRESS_DURATION = 6000
 
 
-def ignore_button_handler(p):
-    global btn_first_press
-    if btn_first_press and time.ticks_ms() - btn_first_press < 500:
-        return
-    btn_first_press = time.ticks_ms()
-    set_object_temperature_ignore_state(True)
-    timer.deinit()
-    timer.init(
-        period=900000,  # 15min
-        mode=Timer.ONE_SHOT,
-        callback=ignore_period_over,
-    )
+def ignore_button_handler(p: Pin):
+    global btn_first_press, btn_last_release
+    if p.value() == 1:
+        btn_last_release = time.ticks_ms()
+        if (
+            btn_first_press
+            and time.ticks_ms() - btn_first_press > MIN_PRESS_DURATION
+            and time.ticks_ms() - btn_first_press < MAX_PRESS_DURATION
+        ):
+            set_object_temperature_ignore_state(True)
+            timer.deinit()
+            timer.init(
+                period=900000,  # 15min
+                mode=Timer.ONE_SHOT,
+                callback=ignore_period_over,
+            )
+            btn_first_press = None
+        elif btn_first_press and time.ticks_ms() - btn_first_press > 500:
+            btn_first_press = None
+    else:
+        if btn_first_press and time.ticks_ms() - btn_first_press < 500:
+            return
+        if time.ticks_ms() - btn_last_release > 1000:
+            btn_first_press = time.ticks_ms()
 
 
 led = Pin("LED", Pin.OUT)
 
 ignore_btn = Pin(28, Pin.IN, Pin.PULL_UP)
-ignore_btn.irq(trigger=Pin.IRQ_RISING, handler=ignore_button_handler)
+ignore_btn.irq(trigger=Pin.IRQ_RISING | Pin.IRQ_FALLING, handler=ignore_button_handler)
 
 i2c = I2C(1, scl=Pin(27), sda=Pin(26), freq=100000)
 
@@ -107,6 +123,8 @@ def main():
             max_wait -= 1
             time.sleep(1)
 
+        wdt = WDT(timeout=8388)
+
         # Handle connection error
         if wlan.status() != 3:
             raise RuntimeError("network connection failed")
@@ -115,21 +133,32 @@ def main():
         addr = socket.getaddrinfo("0.0.0.0", 80)[0][-1]
 
         s = socket.socket()
+        s.settimeout(3.0)
         s.bind(addr)
         s.listen(3)
 
         # Listen for connections
         while True:
+            wdt.feed()
+            if wlan.status() != 3:
+                raise RuntimeError("network connection failed")
             try:
                 client, addr = s.accept()
                 led.on()
 
                 # clear buffer
+                line = client.readline()
+
+                # check for /reset
+                if "/reset" in line:
+                    ignore_period_over(None)
+
                 while True:
-                    line = client.readline()
                     if not line or line == b"\r\n":
                         break
+                    line = client.readline()
 
+                wdt.feed()
                 response = dict()
                 try:
                     (
@@ -165,8 +194,8 @@ def main():
     except Exception:
         ...
     finally:
-        time.sleep(10)
-        machine.reset()
+        # this will cause a watchdog reset
+        time.sleep(15)
 
 
 main()
