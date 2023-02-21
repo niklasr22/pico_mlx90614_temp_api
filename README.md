@@ -21,6 +21,7 @@ rshell --buffer-size=30 -p /dev/tty.usbmodem1101 -a
 
 ```
 cp <file.xyz> /pyboard/<file.xyz>
+cp sensor_web.py /pyboard/main.py
 ```
 
 ### Micropython REPL

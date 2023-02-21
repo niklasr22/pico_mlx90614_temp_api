@@ -31,10 +31,19 @@ def ignore_period_over(t):
     timer.deinit()
 
 
+def start_ignore_period():
+    set_object_temperature_ignore_state(True)
+    timer.deinit()
+    timer.init(
+        period=900000,  # 15min
+        mode=Timer.ONE_SHOT,
+        callback=ignore_period_over,
+    )
+
+
 btn_first_press = None
 btn_last_release = time.ticks_ms()
-MIN_PRESS_DURATION = 3000
-MAX_PRESS_DURATION = 6000
+MIN_PRESS_DURATION = 2000
 
 
 def ignore_button_handler(p: Pin):
@@ -43,18 +52,12 @@ def ignore_button_handler(p: Pin):
         btn_last_release = time.ticks_ms()
         if (
             btn_first_press
-            and time.ticks_ms() - btn_first_press > MIN_PRESS_DURATION
-            and time.ticks_ms() - btn_first_press < MAX_PRESS_DURATION
+            and time.ticks_ms() - btn_first_press > 500
+            and time.ticks_ms() - btn_first_press < MIN_PRESS_DURATION
         ):
-            set_object_temperature_ignore_state(True)
-            timer.deinit()
-            timer.init(
-                period=900000,  # 15min
-                mode=Timer.ONE_SHOT,
-                callback=ignore_period_over,
-            )
             btn_first_press = None
-        elif btn_first_press and time.ticks_ms() - btn_first_press > 500:
+        elif btn_first_press and time.ticks_ms() - btn_first_press > MIN_PRESS_DURATION:
+            start_ignore_period()
             btn_first_press = None
     else:
         if btn_first_press and time.ticks_ms() - btn_first_press < 500:
@@ -152,6 +155,8 @@ def main():
                 # check for /reset
                 if "/reset" in line:
                     ignore_period_over(None)
+                if "/ignore" in line:
+                    start_ignore_period()
 
                 while True:
                     if not line or line == b"\r\n":
@@ -168,15 +173,9 @@ def main():
                         object_temp_2,
                     ) = read_temperature(i2c)
                     response["ambient_temperature"] = ambient_temp
-                    response["object_temperature_1"] = (
-                        ambient_temp if ignore_object_temperature else object_temp_1
-                    )
-                    response["object_temperature_2"] = (
-                        ambient_temp if ignore_object_temperature else object_temp_2
-                    )
-                    response["object_temperature_avg"] = (
-                        ambient_temp if ignore_object_temperature else object_temp_avg
-                    )
+                    response["object_temperature_1"] = object_temp_1
+                    response["object_temperature_2"] = object_temp_2
+                    response["object_temperature_avg"] = object_temp_avg
                     response["ignore_state"] = ignore_object_temperature
                     response["success"] = True
                 except InvalidReadingError as e:
